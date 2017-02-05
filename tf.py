@@ -28,9 +28,12 @@ class TFStockStudy:
         XT = tf.transpose(X, [1, 0, 2])
         XR = tf.reshape(XT, [-1, lstm_size])
         X_split = tf.split(0, self.time_step_size, XR)
-        cell = tf.nn.rnn_cell.GRUCell(lstm_size)
+
+        with tf.variable_scope("Linear"):
+            cell = tf.nn.rnn_cell.GRUCell(lstm_size)
         cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, output_keep_prob=0.5)
         cell = tf.nn.rnn_cell.MultiRNNCell([cell] * self.lstm_depth, state_is_tuple=True)
+
         outputs, _states = tf.nn.rnn(cell, X_split, dtype=tf.float32)
 
         return tf.matmul(outputs[-1], W) + B, cell.state_size  # State size to initialize the stat
@@ -55,7 +58,7 @@ class TFStockStudy:
 
             price = items[-(self.evaluate_size + 1)][CLOSE]
             max = items[-self.evaluate_size][HIGH]
-            min = items[-self.evaluate_size][2]
+            min = items[-self.evaluate_size][LOW]
 
             for item in items[-self.evaluate_size + 1:]:
                 if max < item[HIGH]:
@@ -71,9 +74,9 @@ class TFStockStudy:
                 Y.append((0., 1., 0.))
 
         arrX = np.array(X)
-        nxM = np.mean(arrX, axis=0)
-        norX = (arrX - nxM) / np.std(arrX, axis=0)
-        return norX, np.array(Y)
+        norX = (arrX - np.mean(arrX, axis=0)) / np.std(arrX, axis=0)
+        arrY = np.array(Y)
+        return norX, arrY
 
     def read_datas(self):
         cursor = self.connection.cursor()
@@ -120,12 +123,17 @@ class TFStockStudy:
                                       range(self.batch_size, len(trX) + 1, self.batch_size)):
                     sess.run(train_op, feed_dict={X: trX[start:end], Y: trY[start:end]})
 
-                test_indices = np.arange(len(teX))  # Get A Test Batch
+                test_indices = np.arange(len(teX))
                 test_indices = test_indices[0:self.test_size]
                 org = teY[test_indices]
                 res = sess.run(predict_op, feed_dict={X: teX[test_indices], Y: teY[test_indices]})
+                print(res)
                 print(i, np.mean(np.argmax(org, axis=1) == res))
 
 
-tf = TFStockStudy()
-tf.run()
+tfs = TFStockStudy()
+tfs.run()
+
+
+
+
