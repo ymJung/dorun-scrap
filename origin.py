@@ -83,8 +83,8 @@ def read_datas():
     trX, trY = read_series_datas(conn, code_dates[:batch_size])
     teX, teY = read_series_datas(conn, code_dates[-test_size:])
 
-    return trX, trY, teX, teY
-trX, trY, teX, teY = read_datas()
+    return code_dates, trX, trY, teX, teY
+code_dates, trX, trY, teX, teY = read_datas()
 X = tf.placeholder(tf.float32, [None, time_step_size, input_vec_size])
 Y = tf.placeholder(tf.float32, [None, label_size])
 W = init_weights([lstm_size, label_size])
