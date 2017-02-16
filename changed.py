@@ -3,12 +3,6 @@ import numpy as np
 import pymysql
 from datetime import date, timedelta
 
-
-DB_IP = '192.168.1.210'
-DB_USER = 'root'
-DB_PWD = '1234'
-DB_SCH = 'data'
-DB_ENC = 'utf8mb4'
 LIMIT_FILTER = 0.70
 
 INPUT_VEC_SIZE = LSTM_SIZE = 7
@@ -20,45 +14,48 @@ LSTM_DEPTH = 4
 BATCH_SIZE = 15000
 TRAIN_CNT = 100
 
+
+class DBManager :
+    def __init__(self):
+        DB_IP = '192.168.1.210'
+        DB_USER = 'root'
+        DB_PWD = '1234'
+        DB_SCH = 'data'
+        DB_ENC = 'utf8mb4'
+        self.conn = pymysql.connect(host=DB_IP, user=DB_USER, password=DB_PWD, db=DB_SCH, charset=DB_ENC)
+        
+    def __del__(self):
+        self.conn.close()
+        
+    def get_codedates(self, code, limit):    
+        query = "SELECT date FROM data.daily_stock WHERE code = %s AND date <= %s ORDER BY date ASC"
+        cursor = self.conn.cursor()
+        cursor.execute(query, (code, limit))
+        code_dates = list()        
+        dates = cursor.fetchall()
+        for date in dates:
+            code_dates.append((code, date[0]))
+        return code_dates
+    def get_items(self, code, date, limit):
+        query = "SELECT open, high, low, close, volume, hold_foreign, st_purchase_inst FROM data.daily_stock WHERE code = %s AND date >= %s ORDER BY date ASC LIMIT %s"
+        cursor = self.conn.cursor()
+        cursor.execute(query, (code, date, limit))
+        items = cursor.fetchall()        
+        return items
+    
+    def get_codes(self):
+        query = "SELECT DISTINCT code FROM data.daily_stock"
+        cursor = self.conn.cursor()
+        cursor.execute(query)
+        return cursor.fetchall()
+    
+
 def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.01))
-conn = pymysql.connect(host=DB_IP, user=DB_USER, password=DB_PWD, db=DB_SCH, charset=DB_ENC)
 
-def get_codedates(code, limit):    
-    query = "SELECT date FROM data.daily_stock WHERE code = %s AND date <= %s ORDER BY date ASC"
-    cursor = conn.cursor()
-    cursor.execute(query, (code, limit))
-    code_dates = list()        
-    dates = cursor.fetchall()
-    conn.close()
-    for date in dates:
-        code_dates.append((code, date[0]))
-    return code_dates
 
-def get_items(code, date, limit):
-    conn = pymysql.connect(host=DB_IP, user=DB_USER, password=DB_PWD, db=DB_SCH, charset=DB_ENC)
-    query = "SELECT open, high, low, close, volume, hold_foreign, st_purchase_inst FROM data.daily_stock WHERE code = %s AND date >= %s ORDER BY date ASC LIMIT %s"
-    cursor = conn.cursor()
-    cursor.execute(query, (code, date, limit))
-    items = cursor.fetchall()
-    conn.close()
-    return items
+
     
-def get_codes():
-    query = "SELECT DISTINCT code FROM data.daily_stock"
-    try :
-        cursor = conn.cursor()
-        cursor.execute(query)
-    except :
-        set_connect()
-        cursor = conn.cursor()
-        cursor.execute(query)
-    return cursor.fetchall()
-    
-    
-def set_connect():
-    print('reset connect')
-    conn = pymysql.connect(host=DB_IP, user=DB_USER, password=DB_PWD, db=DB_SCH, charset=DB_ENC)
     
     
 def model(code, X, W, B, lstm_size):
@@ -74,12 +71,12 @@ def model(code, X, W, B, lstm_size):
 
     return tf.matmul(outputs[-1], W) + B, cell.state_size # State size to initialize the stat
 
-def read_series_datas(code_dates):
-    EXPECT = 3
+def read_series_datas(db, code_dates):
+    EXPECT = 6
     X = list()
     Y = list()
     for code_date in code_dates:
-        items = get_items(code_date[0], code_date[1], TIME_STEP_SIZE + EVALUATE_SIZE)
+        items = db.get_items(code_date[0], code_date[1], TIME_STEP_SIZE + EVALUATE_SIZE)
   
         if len(items) < (EVALUATE_SIZE + TIME_STEP_SIZE):
             break
@@ -108,21 +105,22 @@ def read_series_datas(code_dates):
     norX = (arrX - meanX) / stdX
     norY = np.array(Y)
     return norX, norY
-def read_datas(code_dates):    
+def read_datas(db, code_dates):    
     np.random.seed()
     np.random.shuffle(code_dates)
 
     trX = list()
     trY = list()
-    trX, trY = read_series_datas(code_dates)
-    teX, teY = read_series_datas(code_dates)
+    trX, trY = read_series_datas(db, code_dates)
+    teX, teY = read_series_datas(db, code_dates)
 
     return trX, trY, teX, teY
-def analyze(code, limit):  
-    code_dates = get_codedates(code, limit)
+def analyze(code, limit):      
+    db = DBManager()
+    code_dates = db.get_codedates(code, limit)
     tf.reset_default_graph()    
     last = code_dates[-1][1]
-    trX, trY, teX, teY = read_datas(code_dates)
+    trX, trY, teX, teY = read_datas(db, code_dates)
     if (len(trX) == 0):
         return None
 
@@ -160,7 +158,7 @@ def analyze(code, limit):
     return analyzed
 
 limit = '2017-02-14'
-codes = get_codes() #
+codes = DBManager().get_codes() #
 filtered = list()
 for code in codes : 
     analyzed = analyze(code[0], limit)
