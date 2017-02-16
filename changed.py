@@ -72,7 +72,7 @@ def model(code, X, W, B, lstm_size):
     return tf.matmul(outputs[-1], W) + B, cell.state_size # State size to initialize the stat
 
 def read_series_datas(db, code_dates):
-    EXPECT = 6
+    EXPECT = 6 ##
     X = list()
     Y = list()
     for code_date in code_dates:
