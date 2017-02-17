@@ -3,16 +3,6 @@ import numpy as np
 import pymysql
 from datetime import date, timedelta
 
-LIMIT_FILTER = 0.70
-
-INPUT_VEC_SIZE = LSTM_SIZE = 7
-TIME_STEP_SIZE = 60
-LABEL_SIZE = 3
-EVALUATE_SIZE = 3
-LSTM_DEPTH = 4
-
-BATCH_SIZE = 15000
-TRAIN_CNT = 100
 
 DB_IP = '192.168.1.210'
 DB_USER = 'root'
@@ -24,9 +14,7 @@ LIMIT_FILTER = 0.70
 INPUT_VEC_SIZE = LSTM_SIZE = 7
 TIME_STEP_SIZE = 60
 LABEL_SIZE = 3
-EVALUATE_SIZE = 3
 LSTM_DEPTH = 4
-EXPECT = 6 ##open, high, low, close, volume, hold_foreign, st_purchase_inst
 
 BATCH_SIZE = 15000
 TRAIN_CNT = 100
@@ -84,11 +72,10 @@ class DBManager :
         return cnt[0] > 0
     def get_volume(self, code, limit_at):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT count(*) as cnt FROM daily_stock WHERE code = %s AND date >= %s", (code, limit_at))
+        cursor.execute("SELECT count(*) as cnt FROM daily_stock WHERE code = %s AND date <= %s", (code, limit_at))
         cnt = cursor.fetchone()
         return cnt[0]
-    
-
+        
     
 def model(code, X, W, B, lstm_size):
     XT = tf.transpose(X, [1, 0, 2]) 
@@ -188,7 +175,10 @@ def analyze(code, limit):
                 print(analyzed)
     return analyzed
 
-limit = '2017-02-14'
+limit = '2017-02-18'
+EXPECT = 6 ##open, high, low, close, volume, hold_foreign, st_purchase_inst
+EVALUATE_SIZE = 3
+
 codes = DBManager().get_codes()
 for code in codes : 
     analyzed = analyze(code[0], limit)
@@ -198,4 +188,4 @@ for code in codes :
         db.insert_result(EXPECT, analyzed["code"], limit, analyzed["per"], EVALUATE_SIZE, volume)        
         print('insert result ', analyzed, volume)
 
-
+print('done')
