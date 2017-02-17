@@ -14,19 +14,39 @@ LSTM_DEPTH = 4
 BATCH_SIZE = 15000
 TRAIN_CNT = 100
 
+DB_IP = '192.168.1.210'
+DB_USER = 'root'
+DB_PWD = '1234'
+DB_SCH = 'data'
+DB_ENC = 'utf8mb4'
+LIMIT_FILTER = 0.70
+
+INPUT_VEC_SIZE = LSTM_SIZE = 7
+TIME_STEP_SIZE = 60
+LABEL_SIZE = 3
+EVALUATE_SIZE = 3
+LSTM_DEPTH = 4
+EXPECT = 6 ##open, high, low, close, volume, hold_foreign, st_purchase_inst
+
+BATCH_SIZE = 15000
+TRAIN_CNT = 100
+
+def init_weights(shape):
+    return tf.Variable(tf.random_normal(shape, stddev=0.01))
 
 class DBManager :
     def __init__(self):
-        DB_IP = '192.168.1.210'
-        DB_USER = 'root'
-        DB_PWD = '1234'
-        DB_SCH = 'data'
-        DB_ENC = 'utf8mb4'
-        self.conn = pymysql.connect(host=DB_IP, user=DB_USER, password=DB_PWD, db=DB_SCH, charset=DB_ENC)
+        self.DB_IP = '192.168.1.210'
+        self.DB_USER = 'root'
+        self.DB_PWD = '1234'
+        self.DB_SCH = 'data'
+        self.DB_ENC = 'utf8mb4'
+        self.conn = self.get_new_conn()
         
     def __del__(self):
         self.conn.close()
-        
+    def get_new_conn(self):
+        return pymysql.connect(host=self.DB_IP, user=self.DB_USER, password=self.DB_PWD, db=self.DB_SCH, charset=self.DB_ENC)
     def get_codedates(self, code, limit):    
         query = "SELECT date FROM data.daily_stock WHERE code = %s AND date <= %s ORDER BY date ASC"
         cursor = self.conn.cursor()
@@ -48,15 +68,27 @@ class DBManager :
         cursor = self.conn.cursor()
         cursor.execute(query)
         return cursor.fetchall()
+    def insert_result(self, expect, code, analyze_at, potential, evaluate, volume) :
+        if self.check_exist(expect, code, analyze_at, evaluate):
+            print('duplicate', expect, code, analyze_at)
+        else :
+            cursor = self.conn.cursor()
+            print(expect,code,analyze_at,potential,volume,evaluate)
+            cursor.execute("INSERT INTO forecast (type, code, analyzeAt, potential, volume, evaluate) VALUES (%s, %s, %s, %s, %s, %s)",
+                           (expect, code, analyze_at, str(potential), volume, evaluate))
+            self.conn.commit()
+    def check_exist(self, expect, code, analyze_at, evaluate):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT count(*) as cnt FROM forecast WHERE type = %s AND code = %s AND analyzeAt = %s AND evaluate = %s", (expect, code, analyze_at, evaluate))
+        cnt = cursor.fetchone()
+        return cnt[0] > 0
+    def get_volume(self, code, limit_at):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT count(*) as cnt FROM daily_stock WHERE code = %s AND date >= %s", (code, limit_at))
+        cnt = cursor.fetchone()
+        return cnt[0]
     
 
-def init_weights(shape):
-    return tf.Variable(tf.random_normal(shape, stddev=0.01))
-
-
-
-    
-    
     
 def model(code, X, W, B, lstm_size):
     XT = tf.transpose(X, [1, 0, 2]) 
@@ -72,7 +104,6 @@ def model(code, X, W, B, lstm_size):
     return tf.matmul(outputs[-1], W) + B, cell.state_size # State size to initialize the stat
 
 def read_series_datas(db, code_dates):
-    EXPECT = 6 ##
     X = list()
     Y = list()
     for code_date in code_dates:
@@ -158,10 +189,13 @@ def analyze(code, limit):
     return analyzed
 
 limit = '2017-02-14'
-codes = DBManager().get_codes() #
-filtered = list()
+codes = DBManager().get_codes()
 for code in codes : 
     analyzed = analyze(code[0], limit)
     if analyzed is not None and analyzed["per"] > LIMIT_FILTER:
-        filtered.append(analyzed)
-print(filtered)
+        db = DBManager()
+        volume = db.get_volume(analyzed["code"], limit)
+        db.insert_result(EXPECT, analyzed["code"], limit, analyzed["per"], EVALUATE_SIZE, volume)        
+        print('insert result ', analyzed, volume)
+
+
