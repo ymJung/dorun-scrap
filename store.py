@@ -17,11 +17,11 @@ class Store:
         self.DEFAULT_FIRST_DATE = 20040101
         self.KOSPI_200 = 180
         self.stock_chart = com.Dispatch("CpSysDib.StockChart")
-        self.stock_chart.SetInputValue(1, ord('1'))
+        self.stock_chart.SetInputValue(1, ord('1'))  # 기간으로 요청
         self.stock_chart.SetInputValue(5,
-                                       (0, 2, 3, 4, 5, 8, 16, 21))
-        self.stock_chart.SetInputValue(6, ord('D'))
-        self.stock_chart.SetInputValue(9, ord('1'))
+                                       (0, 2, 3, 4, 5, 8, 16, 21))  # 요청필드(날짜, 시가, 고가, 저가, 종가, 거래량, 외국인 보유수량, 기관 누적 순매수
+        self.stock_chart.SetInputValue(6, ord('D'))  # 일간데이터
+        self.stock_chart.SetInputValue(9, ord('1'))  # 수정주가 요청
         self.code_mgr = com.Dispatch("CpUtil.CpCodeMgr")
 
     def __del__(self):
@@ -59,7 +59,7 @@ class Store:
         last_date = cursor.fetchone()
         if last_date is None:
             return self.DEFAULT_FIRST_DATE
-        after_day = datetime.strptime(last_date, "%Y-%m-%d %H:%M:%S") + timedelta(days=1)
+        after_day = last_date.get('date') + timedelta(days=1)
         return after_day.year * 10000 + after_day.month * 100 + after_day.day
 
     def is_invalid_status(self):
@@ -72,10 +72,10 @@ class Store:
         for code in self.code_mgr.GetGroupCodeList(self.KOSPI_200):
             possible_store_date = self.get_possible_store_date(code)
             self.stock_chart.SetInputValue(0, code)
-            self.stock_chart.SetInputValue(3, possible_store_date)
+            self.stock_chart.SetInputValue(3, possible_store_date)  # 종료일
             if self.is_invalid_status():
                 continue
-            if self.stock_chart.GetHeaderValue(5) < possible_store_date:
+            if self.stock_chart.GetHeaderValue(5) < possible_store_date:  # 최종 영업일이 요청일 보다 이전인 경우 Skip
                 continue
             self.save_stocks(code, self.stock_chart)
 
@@ -83,6 +83,4 @@ class Store:
                 if self.is_invalid_status():
                     continue
                 self.save_stocks(code, self.stock_chart)
-
-
 Store().run()

@@ -2,13 +2,15 @@ import tensorflow as tf
 import numpy as np
 import pymysql
 from datetime import date, timedelta
+import configparser
 
-
-DB_IP = '192.168.1.210'
-DB_USER = 'root'
-DB_PWD = '1234'
-DB_SCH = 'data'
-DB_ENC = 'utf8mb4'
+cf = configparser.ConfigParser()
+cf.read('config/config.cfg')
+                               
+DB_IP = cf.get('db', 'DB_IP')
+DB_USER = cf.get('db', 'DB_USER')
+DB_PWD = cf.get('db', 'DB_PWD')
+DB_SCH = cf.get('db', 'DB_SCH')
 LIMIT_FILTER = 0.70
 
 INPUT_VEC_SIZE = LSTM_SIZE = 7
@@ -23,18 +25,13 @@ def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.01))
 
 class DBManager :
-    def __init__(self):
-        self.DB_IP = '192.168.1.210'
-        self.DB_USER = 'root'
-        self.DB_PWD = '1234'
-        self.DB_SCH = 'data'
-        self.DB_ENC = 'utf8mb4'
+    def __init__(self):        
         self.conn = self.get_new_conn()
         
     def __del__(self):
         self.conn.close()
     def get_new_conn(self):
-        return pymysql.connect(host=self.DB_IP, user=self.DB_USER, password=self.DB_PWD, db=self.DB_SCH, charset=self.DB_ENC)
+        return pymysql.connect(host=DB_IP, user=DB_USER, password=DB_PWD, db=DB_SCH, charset='utf8mb4')
     def get_codedates(self, code, limit):    
         query = "SELECT date FROM data.daily_stock WHERE code = %s AND date <= %s ORDER BY date ASC"
         cursor = self.conn.cursor()
