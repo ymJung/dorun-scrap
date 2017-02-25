@@ -1,16 +1,18 @@
 import tensorflow as tf
 import numpy as np
 import pymysql
+import datetime
 from datetime import date, timedelta
 import configparser
 
 cf = configparser.ConfigParser()
-cf.read('config/config.cfg')
+cf.read('config.cfg')
                                
 DB_IP = cf.get('db', 'DB_IP')
 DB_USER = cf.get('db', 'DB_USER')
 DB_PWD = cf.get('db', 'DB_PWD')
 DB_SCH = cf.get('db', 'DB_SCH')
+
 LIMIT_FILTER = 0.70
 
 INPUT_VEC_SIZE = LSTM_SIZE = 7
@@ -19,13 +21,13 @@ LABEL_SIZE = 3
 LSTM_DEPTH = 4
 
 BATCH_SIZE = 15000
-TRAIN_CNT = 100
+TRAIN_CNT = 600
 
 def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.01))
 
 class DBManager :
-    def __init__(self):        
+    def __init__(self):
         self.conn = self.get_new_conn()
         
     def __del__(self):
@@ -59,12 +61,12 @@ class DBManager :
         else :
             cursor = self.conn.cursor()
             print(expect,code,analyze_at,potential,volume,evaluate)
-            cursor.execute("INSERT INTO forecast (type, code, analyzeAt, potential, volume, evaluate) VALUES (%s, %s, %s, %s, %s, %s)",
-                           (expect, code, analyze_at, str(potential), volume, evaluate))
+            cursor.execute("INSERT INTO forecast (type, code, analyzeAt, potential, volume, evaluate, train) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                           (expect, code, analyze_at, str(potential), volume, evaluate, TRAIN_CNT))
             self.conn.commit()
     def check_exist(self, expect, code, analyze_at, evaluate):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT count(*) as cnt FROM forecast WHERE type = %s AND code = %s AND analyzeAt = %s AND evaluate = %s", (expect, code, analyze_at, evaluate))
+        cursor.execute("SELECT count(*) as cnt FROM forecast WHERE type = %s AND code = %s AND analyzeAt = %s AND evaluate = %s AND train=%s", (expect, code, analyze_at, evaluate, TRAIN_CNT))
         cnt = cursor.fetchone()
         return cnt[0] > 0
     def get_volume(self, code, limit_at):
@@ -73,7 +75,6 @@ class DBManager :
         cnt = cursor.fetchone()
         return cnt[0]
         
-    
 def model(code, X, W, B, lstm_size):
     XT = tf.transpose(X, [1, 0, 2]) 
     XR = tf.reshape(XT, [-1, lstm_size])
@@ -86,7 +87,6 @@ def model(code, X, W, B, lstm_size):
     outputs, _states = tf.nn.rnn(cell, X_split, dtype=tf.float32)
 
     return tf.matmul(outputs[-1], W) + B, cell.state_size # State size to initialize the stat
-
 def read_series_datas(db, code_dates):
     X = list()
     Y = list()
@@ -130,6 +130,7 @@ def read_datas(db, code_dates):
     teX, teY = read_series_datas(db, code_dates)
 
     return trX, trY, teX, teY
+
 def analyze(code, limit):      
     db = DBManager()
     code_dates = db.get_codedates(code, limit)
@@ -162,27 +163,31 @@ def analyze(code, limit):
             for start, end in zip(range(0, len(trX), BATCH_SIZE), range(BATCH_SIZE, len(trX)+1, BATCH_SIZE)):
                 sess.run(train_op, feed_dict={X: trX[start:end], Y: trY[start:end]})
 
-            test_indices = np.arange(len(teX))
-            org = teY[test_indices]
+            test_indices = np.arange(len(teY))
+            org = teY[test_indices] ## fixfix
             res = sess.run(predict_op, feed_dict={X: teX[test_indices], Y: teY[test_indices]})
             
             if loop == TRAIN_CNT-1 :
                 result = np.mean(np.argmax(org, axis=1) == res)                
-                analyzed = {"stock":code, "per":round(result, 2), "date":limit}
-                print(analyzed)
+                analyzed = {"code":code, "per":round(result, 2), "date":limit}
     return analyzed
+target_at = datetime.datetime.strptime('2017-02-24', '%Y-%m-%d')
+loop_size = timedelta(days=1)
+limit_at = date(2017,2,25)
 
-limit = '2017-02-18'
 EXPECT = 6 ##open, high, low, close, volume, hold_foreign, st_purchase_inst
 EVALUATE_SIZE = 3
+#target_at = datetime.datetime.strptime(limit, '%Y-%m-%d') + timedelta(days=EVALUATE_SIZE)
 
-codes = DBManager().get_codes()
-for code in codes : 
-    analyzed = analyze(code[0], limit)
-    if analyzed is not None and analyzed["per"] > LIMIT_FILTER:
+while limit_at > target_at.date():    
+    target_at += loop_size
+    codes = DBManager().get_codes()
+    for code in codes : 
+        analyzed = analyze(code[0], target_at)
+        if analyzed is None:
+            continue
         db = DBManager()
-        volume = db.get_volume(analyzed["code"], limit)
-        db.insert_result(EXPECT, analyzed["code"], limit, analyzed["per"], EVALUATE_SIZE, volume)        
-        print('insert result ', analyzed, volume)
+        volume = db.get_volume(analyzed["code"], target_at)    
+        db.insert_result(EXPECT, analyzed["code"], target_at, analyzed["per"], EVALUATE_SIZE, volume)        
 
-print('done')
+    print('done')
