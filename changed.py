@@ -29,7 +29,6 @@ def init_weights(shape):
 class DBManager :
     def __init__(self):
         self.conn = self.get_new_conn()
-        
     def __del__(self):
         self.conn.close()
     def get_new_conn(self):
@@ -171,7 +170,7 @@ def analyze(code, limit):
                 result = np.mean(np.argmax(org, axis=1) == res)                
                 analyzed = {"code":code, "per":round(result, 2), "date":limit}
     return analyzed
-target_at = datetime.datetime.strptime('2017-02-24', '%Y-%m-%d')
+target_at = datetime.datetime.strptime('2017-02-19', '%Y-%m-%d')
 loop_size = timedelta(days=1)
 limit_at = date(2017,2,25)
 
