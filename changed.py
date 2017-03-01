@@ -187,6 +187,6 @@ while limit_at > target_at.date():
             continue
         db = DBManager()
         volume = db.get_volume(analyzed["code"], target_at)    
-        db.insert_result(EXPECT, analyzed["code"], target_at, analyzed["per"], EVALUATE_SIZE, volume)        
+        db.insert_result(EXPECT, analyzed["code"], target_at + timedelta(days=EVALUATE_SIZE), analyzed["per"], EVALUATE_SIZE, volume)        
 
     print('done')
