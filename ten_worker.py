@@ -200,11 +200,9 @@ while limit_at > target_at.date():
     codes = db.get_codes()
     for code in codes :
         if db.check_exist(EXPECT, code[0], target_at, EVALUATE_SIZE):
-            print('exist')
             continue
         analyzed = analyze(code[0], target_at)
         if analyzed is None:
-            print('none')
             continue
         db = DBManager()
         volume = db.get_volume(analyzed["code"], target_at)    
