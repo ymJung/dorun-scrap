@@ -57,6 +57,8 @@ class DBManager :
         cursor.execute(query)
         return cursor.fetchall()
     def insert_result(self, expect, code, analyze_at, potential, evaluate, volume) :
+        if self.check_daily_target(analyze_at):
+            return
         if self.check_exist(expect, code, analyze_at, evaluate):
             print('duplicate', expect, code, analyze_at)
         else :
@@ -75,18 +77,17 @@ class DBManager :
         cursor.execute("SELECT count(*) as cnt FROM daily_stock WHERE code = %s AND date <= %s", (code, limit_at))
         cnt = cursor.fetchone()
         return cnt[0]
-        
+    def check_daily_target(self, target_at):
+        cursor = self.conn.cursor()
+        cursor.execute("select count(id) from data.daily_stock where date = %s", (target_at))
+        cnt = cursor.fetchone()
+        return cnt[0] > 0
     def get_last_date_at(self):
         cursor = self.conn.cursor()
-        cursor.execute("select distinct(date) from data.daily_stock order by date desc limit 1")
+        cursor.execute("select max(date) from data.daily_stock")
         last = cursor.fetchone()
         return last[0]
-    def get_last_analyze_at(self):
-        cursor = self.conn.cursor()
-        cursor.execute("select distinct(analyzeAt) from data.forecast order by analyzeAt desc limit 1")
-        last = cursor.fetchone()
-        return last[0]
-    
+
 def read_series_datas(db, code_dates):
     X = list()
     Y = list()
@@ -130,7 +131,6 @@ def read_datas(db, code_dates):
     teX, teY = read_series_datas(db, code_dates)
 
     return trX, trY, teX, teY
-
 def analyze(code, limit):      
     db = DBManager()
     code_dates = db.get_codedates(code, limit)
@@ -170,6 +170,7 @@ def analyze(code, limit):
                 result = np.mean(np.argmax(org, axis=1) == res)                
                 analyzed = {"code":code, "per":round(result, 2), "date":limit}
     return analyzed
+
 def model(code, X, W, B, lstm_size):
     XT = tf.transpose(X, [1, 0, 2]) 
     XR = tf.reshape(XT, [-1, lstm_size])
@@ -185,27 +186,28 @@ def model(code, X, W, B, lstm_size):
     outputs, _states = tf.contrib.rnn.static_rnn(cell, X_split, dtype=tf.float32)
 
     return tf.matmul(outputs[-1], W) + B, cell.state_size # State size to initialize the stat
-
-target_at = DBManager().get_last_analyze_at() - timedelta(days=EVALUATE_SIZE)
+target_at = datetime.datetime.strptime('20170312', '%Y%m%d') 
 loop_size = timedelta(days=1)
 limit_at = DBManager().get_last_date_at().date()
 
 EXPECT = 3 ##open, high, low, close, volume, hold_foreign, st_purchase_inst
 EVALUATE_SIZE = 3
-#target_at = datetime.datetime.strptime(limit, '%Y-%m-%d') + timedelta(days=EVALUATE_SIZE)
 
 while limit_at > target_at.date():    
     target_at += loop_size
+    print(target_at)
     db = DBManager()
     codes = db.get_codes()
     for code in codes :
-        analyzed = analyze(code[0], target_at)
-        analyze_at = target_at + timedelta(days=EVALUATE_SIZE)        
-        if analyzed is None or db.check_exist(EXPECT,  analyzed["code"], analyze_at, EVALUATE_SIZE):
+        if db.check_exist(EXPECT, code[0], target_at, EVALUATE_SIZE):
+            print('exist')
             continue
-        code = analyzed["code"]
+        analyzed = analyze(code[0], target_at)
+        if analyzed is None:
+            print('none')
+            continue
         db = DBManager()
-        volume = db.get_volume(code, target_at)    
-        db.insert_result(EXPECT, code, analyze_at, analyzed["per"], EVALUATE_SIZE, volume)        
+        volume = db.get_volume(analyzed["code"], target_at)    
+        db.insert_result(EXPECT, analyzed["code"], target_at, analyzed["per"], EVALUATE_SIZE, volume)        
 
     print('done')
