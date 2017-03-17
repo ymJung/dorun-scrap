@@ -26,7 +26,6 @@ TRAIN_CNT = 600
 
 def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.01))
-
 class DBManager :
     def __init__(self):
         self.conn = self.get_new_conn()
@@ -57,8 +56,6 @@ class DBManager :
         cursor.execute(query)
         return cursor.fetchall()
     def insert_result(self, expect, code, analyze_at, potential, evaluate, volume) :
-        if self.check_daily_target(analyze_at):
-            return
         if self.check_exist(expect, code, analyze_at, evaluate):
             print('duplicate', expect, code, analyze_at)
         else :
@@ -87,7 +84,11 @@ class DBManager :
         cursor.execute("select max(date) from data.daily_stock")
         last = cursor.fetchone()
         return last[0]
-
+    def get_last_analyze_at(self):
+        cursor = self.conn.cursor()
+        cursor.execute("select max(analyzeAt) from data.forecast")
+        last = cursor.fetchone()
+        return last[0]
 def read_series_datas(db, code_dates):
     X = list()
     Y = list()
@@ -163,14 +164,13 @@ def analyze(code, limit):
                 sess.run(train_op, feed_dict={X: trX[start:end], Y: trY[start:end]})
 
             test_indices = np.arange(len(teY))
-            org = teY[test_indices] ## fixfix
+            org = teY[test_indices]
             res = sess.run(predict_op, feed_dict={X: teX[test_indices], Y: teY[test_indices]})
             
             if loop == TRAIN_CNT-1 :
                 result = np.mean(np.argmax(org, axis=1) == res)                
                 analyzed = {"code":code, "per":round(result, 2), "date":limit}
     return analyzed
-
 def model(code, X, W, B, lstm_size):
     XT = tf.transpose(X, [1, 0, 2]) 
     XR = tf.reshape(XT, [-1, lstm_size])
@@ -186,9 +186,11 @@ def model(code, X, W, B, lstm_size):
     outputs, _states = tf.contrib.rnn.static_rnn(cell, X_split, dtype=tf.float32)
 
     return tf.matmul(outputs[-1], W) + B, cell.state_size # State size to initialize the stat
-target_at = datetime.datetime.strptime('20170312', '%Y%m%d') 
+target_db = DBManager()
+
+target_at = target_db.get_last_analyze_at() - timedelta(days=1)
 loop_size = timedelta(days=1)
-limit_at = DBManager().get_last_date_at().date()
+limit_at = target_db.get_last_date_at().date()
 
 EXPECT = 3 ##open, high, low, close, volume, hold_foreign, st_purchase_inst
 EVALUATE_SIZE = 3
@@ -199,10 +201,14 @@ while limit_at > target_at.date():
     db = DBManager()
     codes = db.get_codes()
     for code in codes :
+        if db.check_daily_target(target_at) is False:
+            print('non exist stock data')
+            continue
         if db.check_exist(EXPECT, code[0], target_at, EVALUATE_SIZE):
             continue
         analyzed = analyze(code[0], target_at)
         if analyzed is None:
+            print('none')
             continue
         db = DBManager()
         volume = db.get_volume(analyzed["code"], target_at)    
