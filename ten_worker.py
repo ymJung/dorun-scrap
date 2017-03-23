@@ -20,6 +20,7 @@ LSTM_SIZE = 7
 TIME_STEP_SIZE = 60
 LABEL_SIZE = 3
 LSTM_DEPTH = 4
+EVALUATE_SIZE = 3
 
 BATCH_SIZE = 15000
 TRAIN_CNT = 600
@@ -84,12 +85,12 @@ class DBManager :
         cursor.execute("select max(date) from data.daily_stock")
         last = cursor.fetchone()
         return last[0]
-    def get_last_analyze_at(self):
+    def get_last_analyze_at(self, expect_type):
         cursor = self.conn.cursor()
-        cursor.execute("select max(analyzeAt) from data.forecast")
+        cursor.execute("SELECT max(analyzeAt) FROM data.forecast WHERE type = %s", (expect_type))
         last = cursor.fetchone()
         return last[0]
-def read_series_datas(db, code_dates):
+def read_series_datas(expect, db, code_dates):
     X = list()
     Y = list()
     for code_date in code_dates:
@@ -99,12 +100,12 @@ def read_series_datas(db, code_dates):
             break
         X.append(np.array(items[:TIME_STEP_SIZE]))
 
-        st_purchase_inst = items[-(EVALUATE_SIZE + 1)][EXPECT]
+        st_purchase_inst = items[-(EVALUATE_SIZE + 1)][expect]
         if st_purchase_inst == 0:
             continue
         for i in range(EVALUATE_SIZE, len(items) - EVALUATE_SIZE):
-            eval_inst = items[i][EXPECT]
-            eval_bef = items[EVALUATE_SIZE-i][EXPECT]
+            eval_inst = items[i][expect]
+            eval_bef = items[EVALUATE_SIZE-i][expect]
             if eval_bef < eval_inst:
                 eval_bef = eval_inst           
         
@@ -122,22 +123,22 @@ def read_series_datas(db, code_dates):
     norX = (arrX - meanX) / stdX
     norY = np.array(Y)
     return norX, norY
-def read_datas(db, code_dates):    
+def read_datas(expect, db, code_dates):    
     np.random.seed()
     np.random.shuffle(code_dates)
 
     trX = list()
     trY = list()
-    trX, trY = read_series_datas(db, code_dates)
-    teX, teY = read_series_datas(db, code_dates)
+    trX, trY = read_series_datas(expect, db, code_dates)
+    teX, teY = read_series_datas(expect, db, code_dates)
 
     return trX, trY, teX, teY
-def analyze(code, limit):      
+def analyze(expect, code, limit):      
     db = DBManager()
     code_dates = db.get_codedates(code, limit)
     tf.reset_default_graph()    
     last = code_dates[-1][1]
-    trX, trY, teX, teY = read_datas(db, code_dates)
+    trX, trY, teX, teY = read_datas(expect, db, code_dates)
     if (len(trX) == 0):
         return None
 
@@ -186,32 +187,34 @@ def model(code, X, W, B, lstm_size):
     outputs, _states = tf.contrib.rnn.static_rnn(cell, X_split, dtype=tf.float32)
 
     return tf.matmul(outputs[-1], W) + B, cell.state_size # State size to initialize the stat
-target_db = DBManager()
+def run(expect):
+    target_db = DBManager()
+    target_at = target_db.get_last_analyze_at(expect) - timedelta(days=1)
+    loop_size = timedelta(days=1)
+    limit_at = target_db.get_last_date_at().date()
 
-target_at = target_db.get_last_analyze_at() - timedelta(days=1)
-loop_size = timedelta(days=1)
-limit_at = target_db.get_last_date_at().date()
 
-EXPECT = 3 ##open, high, low, close, volume, hold_foreign, st_purchase_inst
-EVALUATE_SIZE = 3
-
-while limit_at > target_at.date():    
-    target_at += loop_size
-    print(target_at)
-    db = DBManager()
-    codes = db.get_codes()
-    for code in codes :
-        if db.check_daily_target(target_at) is False:
-            print('non exist stock data')
-            continue
-        if db.check_exist(EXPECT, code[0], target_at, EVALUATE_SIZE):
-            continue
-        analyzed = analyze(code[0], target_at)
-        if analyzed is None:
-            print('none')
-            continue
+    while limit_at > target_at.date():    
+        target_at += loop_size
+        print(target_at)
         db = DBManager()
-        volume = db.get_volume(analyzed["code"], target_at)    
-        db.insert_result(EXPECT, analyzed["code"], target_at, analyzed["per"], EVALUATE_SIZE, volume)        
+        codes = db.get_codes()
+        for code in codes :
+            if db.check_daily_target(target_at) is False:
+                print('non exist stock data')
+                continue
+            if db.check_exist(expect, code[0], target_at, EVALUATE_SIZE):
+                continue
+            analyzed = analyze(expect, code[0], target_at)
+            if analyzed is None:
+                print('none')
+                continue
+            db = DBManager()
+            volume = db.get_volume(analyzed["code"], target_at)    
+            db.insert_result(expect, analyzed["code"], target_at, analyzed["per"], EVALUATE_SIZE, volume)        
 
-    print('done')
+        print('done')
+expects = [3,6] ##open, high, low, close, volume, hold_foreign, st_purchase_inst
+for expect in expects:
+    run(expect)
+

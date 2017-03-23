@@ -7,7 +7,7 @@ import configparser
 class Store:
     def __init__(self):
         cf = configparser.ConfigParser()
-        cf.read('config.cfg')
+        cf.read('config/config.cfg')
         self.connection = pymysql.connect(host=cf.get('db', 'DB_IP'),
                                           user=cf.get('db', 'DB_USER'),
                                           password=cf.get('db', 'DB_PWD'),
@@ -34,23 +34,33 @@ class Store:
         cursor = self.connection.cursor()
         for i in range(ds_stock_chart.GetHeaderValue(3)):
             date = ds_stock_chart.GetDataValue(0, i)
-            cursor.execute(
-                "INSERT INTO "
-                "data.daily_stock(code, date, open, high, low, close, volume, hold_foreign, st_purchase_inst) "
-                "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (
-                    code,
-                    datetime(date // 10000, date // 100 % 100, date % 100),
-                    ds_stock_chart.GetDataValue(1, i),
-                    ds_stock_chart.GetDataValue(2, i),
-                    ds_stock_chart.GetDataValue(3, i),
-                    ds_stock_chart.GetDataValue(4, i),
-                    ds_stock_chart.GetDataValue(5, i),
-                    float(ds_stock_chart.GetDataValue(6, i)),
-                    float(ds_stock_chart.GetDataValue(7, i))
+            cursor.execute("select count(date) as cnt from data.daily_stock where date = %s", (date))
+            exist = cursor.fetchone()
+
+            s_date = datetime(date // 10000, date // 100 % 100, date % 100)
+            open = ds_stock_chart.GetDataValue(1, i)
+            high = ds_stock_chart.GetDataValue(2, i)
+            low = ds_stock_chart.GetDataValue(3, i)
+            close = ds_stock_chart.GetDataValue(4, i)
+            volume = ds_stock_chart.GetDataValue(5, i)
+            hold_foreign = float(ds_stock_chart.GetDataValue(6, i))
+            st_purchase_inst = float(ds_stock_chart.GetDataValue(7, i))
+
+            if exist.get('cnt') > 0:
+                cursor.execute("select id from data.daily_stock where date = %s and code = %s", (date, code))
+                upd_id = cursor.fetchone()
+                cursor.execute("UPDATE data.daily_stock SET "
+                               "code = %s, date = %s, open = %s, high = %s, low= %s, close= %s, volume= %s, hold_foreign= %s, st_purchase_inst= %s"
+                               " WHERE `id`=%s", (code, s_date, open, high, low, close, volume, hold_foreign, st_purchase_inst, upd_id))
+                print('updated stocks code ', code, ' date', date)
+            else:
+                cursor.execute(
+                    "INSERT INTO "
+                    "data.daily_stock(code, date, open, high, low, close, volume, hold_foreign, st_purchase_inst) "
+                    "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (code, s_date, open, high, low, close, volume, hold_foreign, st_purchase_inst)
                 )
-            )
-            print('saved stocks code ', code, ' date', date)
+                print('saved stocks code ', code, ' date', date)
         self.commit()
 
     def get_possible_store_date(self, code):
