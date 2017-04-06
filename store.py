@@ -7,7 +7,7 @@ import configparser
 class Store:
     def __init__(self):
         cf = configparser.ConfigParser()
-        cf.read('config/config.cfg')
+        cf.read('config.cfg')
         self.connection = pymysql.connect(host=cf.get('db', 'DB_IP'),
                                           user=cf.get('db', 'DB_USER'),
                                           password=cf.get('db', 'DB_PWD'),
