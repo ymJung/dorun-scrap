@@ -27,6 +27,7 @@ TRAIN_CNT = 600
 
 def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.01))
+
 class DBManager :
     def __init__(self):
         self.conn = self.get_new_conn()
@@ -214,6 +215,8 @@ def run(expect):
             db.insert_result(expect, analyzed["code"], target_at, analyzed["per"], EVALUATE_SIZE, volume)        
 
         print('done')
+        
+        
 expects = [3,6] ##open, high, low, close, volume, hold_foreign, st_purchase_inst
 for expect in expects:
     run(expect)
